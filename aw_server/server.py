@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import aw_datastore
 import flask.json.provider
 from aw_datastore import Datastore
+from aw_datastore.storages.peewee import PeeweeStorage
 from flask import (
     Blueprint,
     Flask,
@@ -66,6 +67,18 @@ class AWFlask(Flask):
             storage_method = aw_datastore.get_storage_methods()["memory"]
         db = Datastore(storage_method, testing=testing)
         self.api = ServerAPI(db=db, testing=testing, query_cache=query_cache)
+
+        if isinstance(db.storage_strategy, PeeweeStorage):
+            database = db.storage_strategy.db
+
+            @self.teardown_appcontext
+            def close_database_connection(exception):
+                # Peewee connections belong to the request thread. Werkzeug
+                # starts a new thread per request; explicitly release its SQLite
+                # descriptors rather than waiting for cyclic garbage collection.
+                if not database.is_closed():
+                    database.close()
+
 
         self.register_blueprint(root)
         self.register_blueprint(rest.blueprint)
